@@ -847,6 +847,7 @@ def main(_):
     estimator = tf.contrib.tpu.TPUEstimator(
         use_tpu=FLAGS.use_tpu,
         model_fn=model_fn,
+        model_dir=FLAGS.saved_checkpoint,
         config=run_config,
         train_batch_size=FLAGS.train_batch_size,
         eval_batch_size=FLAGS.eval_batch_size,
@@ -905,8 +906,7 @@ def main(_):
             drop_remainder=predict_drop_remainder)
 
         # 在此处指定加载训练好的模型
-        result = estimator.predict(input_fn=predict_input_fn,
-                                   checkpoint_path=os.path.join(FLAGS.saved_checkpoint, "model.ckpt-689"))
+        result = estimator.predict(input_fn=predict_input_fn)
 
         intent_output_predict_file = os.path.join(TOUT, "test", "intent_prediction_test_results.txt")
         slot_output_predict_file = os.path.join(TOUT, "test", "slot_filling_test_results.txt")
