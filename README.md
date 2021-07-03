@@ -31,15 +31,15 @@
 ### 运行命令
 #### 训练
 ~~~bash
-Under code/JointLearningModel:
+Under code:
 
-python run_highly_joint_with_lstm_crf.py --num_train_epochs 10
+python run_intent_cls.py --num_train_epochs 10 --do_train --do_eval --do_predict --save_checkpoints_steps 50
 ~~~
 #### 预测
 ~~~bash
 Under code:
 
-python infer_pipeline.py --saved_checkpoint ../saved_model --predict_dir ../standard_dataset/infer
+python infer_pipeline.py --do_predict --predict_batch_size 8 --saved_checkpoint ../saved_model --predict_dir ../standard_dataset/infer
 ~~~
 
 ### 目录结构
