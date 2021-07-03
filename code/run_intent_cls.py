@@ -3,9 +3,7 @@
 """
 @Author:yuanxiao
 from: https://github.com/yuanxiaosc/BERT-for-Sequence-Labeling-and-Text-Classification
-主要修改，实现预测的接口API，
-1. 规则识别数值触发词
-2. 加载预训练模型，预测论元
+改动自run_highly_joint_with_lstm_crf.py，去除序列标注任务，只进行触发词分类
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -17,7 +15,6 @@ import os
 import pickle
 import shutil
 import tensorflow as tf
-import pprint
 import sys
 
 sys.path.append('..')
@@ -30,7 +27,6 @@ from tensorflow.contrib.layers.python.layers import initializers
 from Bert import modeling
 from Bert import optimization
 from Bert import tokenization
-import NumberTrigger.find_number_span_in_splitted_text as trig
 
 
 # 配置log
@@ -39,8 +35,8 @@ logger.propagate = False
 
 # 配置GPU
 config = tf.compat.v1.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction = 0.9  # 配置使用内存比例
-# config.gpu_options.allow_growth = True  # 按照需求增加内存，可能导致碎片化
+config.gpu_options.per_process_gpu_memory_fraction = 0.9
+# config.gpu_options.allow_growth = True
 
 # tf会话
 session = tf.compat.v1.Session(config=config)
@@ -50,7 +46,7 @@ FLAGS = flags.FLAGS
 # important ==========================================================
 BERT_MODEL_DIR = '../wwm_cased_L-24_H-1024_A-16/'
 DATA_DIR = '../standard_dataset/split_files/'
-OUTPUT_DIR = ''
+OUTPUT_DIR = '../results/split_result_highly_lstm_crf/'
 # ====================================================================
 
 flags.DEFINE_string("data_dir", DATA_DIR, "The input datadir.")
@@ -80,12 +76,11 @@ flags.DEFINE_float('dropout_rate', 0.1, 'Dropout rate')
 flags.DEFINE_integer('lstm_size', 384, 'LSTM size')
 flags.DEFINE_float("warmup_proportion", 0.1,
                    "Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10% of training.")
-flags.DEFINE_integer("save_checkpoints_steps", 1000, "How often to save the model checkpoint.")
+flags.DEFINE_integer("save_checkpoints_steps", 50, "How often to save the model checkpoint.")
 flags.DEFINE_integer("iterations_per_loop", 1000, "How many steps to make in each estimator call.")
 
 # 用于预测API ===========================================================================
 flags.DEFINE_string("saved_checkpoint", "", "Saved checkpoint for slot prediction.")
-flags.DEFINE_string("predict_dir", "", "Directory of txt files for NIE prediction")
 # ======================================================================================
 
 # not used
@@ -195,12 +190,7 @@ class Quantity_Joint_LSTM_CRF_Processor(DataProcessor):
                         '''单条数据'''
                         seqin_words = [word for word in seqin.split() if len(word) > 0]  # 按照空白符手动进行分割
                         seqout_words = [word for word in seqout.split() if len(word) > 0]
-
-                        try:
-                            assert len(seqin_words) == len(seqout_words), "{}, {}".format(len(seqin_words), len(seqout_words))
-                        except:
-                            print(seqin_words)
-                            continue  # 跳过此条数据
+                        assert len(seqin_words) == len(seqout_words)
 
                         seq_in_list.append(" ".join(seqin_words))
                         seq_out_list.append(" ".join(seqout_words))
@@ -283,10 +273,14 @@ def convert_single_example(ex_index, example, slot_label_list, intent_label_list
     slot_label_map = {}
     for i, label in enumerate(slot_label_list):
         slot_label_map[label] = i
+    with open(os.path.join(FLAGS.output_dir, "slot_label2id.pkl"), 'wb') as w:
+        pickle.dump(slot_label_map, w)
 
     intent_label_map = {}
     for i, label in enumerate(intent_label_list):
         intent_label_map[label] = i
+    with open(os.path.join(FLAGS.output_dir, "intent_label2id.pkl"), 'wb') as w:
+        pickle.dump(intent_label_map, w)
 
     text_a_list = example.text_a.split(" ")
     text_b_list = example.text_b.split(" ")
@@ -358,16 +352,16 @@ def convert_single_example(ex_index, example, slot_label_list, intent_label_list
     label_id = intent_label_map[example.label]
 
     # print 5 examples
-    # if ex_index < 5:
-    #     logger.info("*** Example ***")
-    #     logger.info("guid: %s" % example.guid)
-    #     logger.info("tokens: %s" % " ".join([tokenization.printable_text(x) for x in tokens]))
-    #     logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-    #     logger.info("slots_ids: %s" % " ".join([str(x) for x in slot_ids]))
-    #     logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-    #     logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-    #     logger.info("is_value_ids: %s" % " ".join([str(x) for x in is_value_ids]))
-    #     logger.info("label: %s (id = %d)" % (example.label, label_id))
+    if ex_index < 5:
+        logger.info("*** Example ***")
+        logger.info("guid: %s" % example.guid)
+        logger.info("tokens: %s" % " ".join([tokenization.printable_text(x) for x in tokens]))
+        logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+        logger.info("slots_ids: %s" % " ".join([str(x) for x in slot_ids]))
+        logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+        logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+        logger.info("is_value_ids: %s" % " ".join([str(x) for x in is_value_ids]))
+        logger.info("label: %s (id = %d)" % (example.label, label_id))
 
     feature = InputFeatures(
         input_ids=input_ids,
@@ -599,8 +593,10 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, i
                 sequence_length=lengths)
             slot_loss = tf.reduce_mean(slot_per_example_loss)
 
-    # multi-task learning
+    # modified total_loss
     loss = intent_loss + FLAGS.slot_loss_ratio * slot_loss
+    # loss = intent_loss + 0.00001 * slot_loss  # BAD RESULTS
+
     return (
         loss,
         intent_loss,
@@ -657,6 +653,16 @@ def model_fn_builder(bert_config, num_slot_labels, num_intent_labels, init_check
         tvars = tf.trainable_variables()  # 获取模型中所有的训练参数
         initialized_variable_names = {}
         scaffold_fn = None
+        if init_checkpoint:  # 加载预训练的Bert模型
+            (assignment_map, initialized_variable_names
+             ) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+            if use_tpu:
+                def tpu_scaffold():
+                    tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+                    return tf.train.Scaffold()
+                scaffold_fn = tpu_scaffold
+            else:
+                tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
         logger.info("**** Trainable Variables ****")
         for var in tvars:
@@ -691,6 +697,12 @@ def model_fn_builder(bert_config, num_slot_labels, num_intent_labels, init_check
                 intent_predictions = tf.argmax(intent_logits, axis=-1, output_type=tf.int32)
                 intent_accuracy = tf.metrics.accuracy(
                     labels=intent_label_ids, predictions=intent_predictions, weights=is_real_example)
+                # print("=============================")
+                # print(intent_label_ids.numpy())  # ERROR
+                # print(intent_predictions.numpy())
+                # print(type(intent_label_ids))
+                # print(type(intent_predictions))
+                # print("=============================")
                 intent_loss = tf.metrics.mean(values=intent_per_example_loss, weights=is_real_example)
 
                 slot_predictions = tf.argmax(slot_logits, axis=-1, output_type=tf.int32)
@@ -747,48 +759,22 @@ def model_fn_builder(bert_config, num_slot_labels, num_intent_labels, init_check
     return model_fn
 
 
-def construct(text, triggers, window=25, padding="[Padding]"):
-    """
-    :param text: str
-    :param triggers: [mention, start, end]
-    :param window:
-    :param padding:
-    :return:
-    """
-    result = []
-    seq_out = ["O"] * window + ["B-Value"] + ["O"] * window
-    label = "Other"
-    for trigger in triggers:
-        assert text[trigger[1]:trigger[2]] == trigger[0]
-        bf = text[:trigger[1]].split()
-        af = text[trigger[2]:].split()
-        bf = ([padding] * window + bf[-window:])[-window:]
-        af = (af[:window] + [padding] * window)[:window]
-        seq_in = bf + [trigger[0]] + af
-        assert len(seq_in) == len(seq_out) == 2 * window + 1
-        result.append((seq_in, seq_out, label))
-    return result
-
-
-def quick_write(seqs, file):
-    """
-    write seqs into file
-    :param seqs:
-    :param file:
-    :return:
-    """
-    with open(file, "w", encoding="utf-8") as f:
-        for one in seqs:
-            if isinstance(one, list):
-                s = " ".join(one)
-            elif isinstance(one, str):
-                s = one
-            else:
-                raise TypeError
-            f.write(s + "\n")
-
-
 def main(_):
+    # ----------------for code test------------------
+    if FLAGS.do_train:
+        if os.path.exists(FLAGS.output_dir):
+            try:
+                os.removedirs(FLAGS.output_dir)
+                os.makedirs(FLAGS.output_dir)
+            except:
+                logger.info("***** Running evaluation *****")
+                logger.warning(FLAGS.output_dir + " is not empty, here use shutil.rmtree(FLAGS.output_dir)!")
+                shutil.rmtree(FLAGS.output_dir)  # remove dir recurrently
+                os.makedirs(FLAGS.output_dir)
+        else:
+            os.makedirs(FLAGS.output_dir)
+    # ----------------for code test------------------
+
     logger.setLevel('INFO')
     tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case, FLAGS.init_checkpoint)
 
@@ -803,6 +789,8 @@ def main(_):
             "Cannot use sequence length %d because the BERT model was only trained up to sequence length %d" %
             (FLAGS.max_seq_length, bert_config.max_position_embeddings)
         )
+
+    tf.gfile.MakeDirs(FLAGS.output_dir)
 
     # 数据加载器
     processor = Quantity_Joint_LSTM_CRF_Processor()
@@ -824,10 +812,13 @@ def main(_):
         tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
             FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project
         )
+
+    # https: // tensorflow.google.cn / api_docs / python / tf / compat / v1 / estimator / tpu / TPUConfig?hl = en
     run_config = tf.contrib.tpu.RunConfig(
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+        keep_checkpoint_max=1000,
         model_dir=FLAGS.saved_checkpoint,
         tpu_config=tf.contrib.tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
@@ -836,14 +827,22 @@ def main(_):
         )
     )
 
+    train_examples = None
+    num_train_steps = None
+    num_warmup_steps = None
+    if FLAGS.do_train:
+        train_examples = processor.get_train_examples(FLAGS.data_dir)  # list of InputExample()
+        num_train_steps = int(len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)  # 所有epoch的总步数
+        num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
+
     model_fn = model_fn_builder(
         bert_config=bert_config,
         num_slot_labels=len(slot_label_list),
         num_intent_labels=len(intent_label_list),
         init_checkpoint=FLAGS.init_checkpoint,
         learning_rate=FLAGS.learning_rate,
-        num_train_steps=0,  # never mind
-        num_warmup_steps=0,
+        num_train_steps=num_train_steps,
+        num_warmup_steps=num_warmup_steps,
         use_tpu=FLAGS.use_tpu,
         use_one_hot_embeddings=FLAGS.use_tpu
     )
@@ -860,31 +859,71 @@ def main(_):
         predict_batch_size=FLAGS.predict_batch_size
     )
 
-    # ==================================
-    # step 1: trigger identification
-    seqs = []
-    for root, dirs, files in os.walk(FLAGS.predict_dir):
-        for file in files:
-            if file.endswith(".txt"):
-                path = os.path.join(root, file)
-                text = open(path, encoding="utf-8").read()
-                triggers = trig.find_number_trigger(text)  # list of [mention:str, start:int, end:int]
-                seqs += construct(text, triggers)
-    seqs_in, seqs_out, labels = zip(*seqs)
+    '''训练、验证、测试'''
+    if FLAGS.do_train:
+        train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
+        file_based_convert_examples_to_features(  # 将样本转化为feature，并存入TF_RECORD文件
+            train_examples, slot_label_list, intent_label_list, FLAGS.max_seq_length, tokenizer, train_file)
+        logger.info("***** Running training *****")
+        logger.info("  Num examples = %d", len(train_examples))
+        logger.info("  Batch size = %d", FLAGS.train_batch_size)
+        logger.info("  Num steps = %d", num_train_steps)
+        train_input_fn = file_based_input_fn_builder(  # 类比于DataLoader
+            input_file=train_file,
+            seq_length=FLAGS.max_seq_length,
+            is_training=True,
+            drop_remainder=True
+        )
+        estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
-    TOUT = FLAGS.predict_dir
-    if os.path.exists(os.path.join(TOUT, "test")):  # 触发词识别及论元预测结果保存到"FLAGS.predict_dir/test/"
-        pass
-    else:
-        os.makedirs(os.path.join(TOUT, "test"))
-    quick_write(seqs_in, os.path.join(TOUT, "test", "seq.in"))
-    quick_write(seqs_out, os.path.join(TOUT, "test", "seq.out"))
-    quick_write(labels, os.path.join(TOUT, "test", "label"))
+    if FLAGS.do_eval:
+        """TPU占用了大量的篇幅"""
+        eval_examples = processor.get_dev_examples(FLAGS.data_dir)
+        num_actual_eval_examples = len(eval_examples)
+        if FLAGS.use_tpu:
+            # TPU requires a fixed batch size for all batches, therefore the number of examples must be a multiple
+            # of the batch size, or else examples will get dropped. So we pad with fake examples which are ignored
+            # later on. These do NOT count towards the metric (all tf.metrics support a per-instance weight, and
+            # these get a weight of 0.0).
+            while len(eval_examples) % FLAGS.eval_batch_size != 0:
+                eval_examples.append(PaddingInputExample())
 
-    # ==================================
-    # step 2: slot prediction
+        eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
+        file_based_convert_examples_to_features(
+            eval_examples, slot_label_list, intent_label_list, FLAGS.max_seq_length, tokenizer, eval_file)
+
+        logger.info("***** Running evaluation *****")
+        logger.info("  Num examples = %d (%d actual, %d padding)",
+                        len(eval_examples), num_actual_eval_examples,
+                        len(eval_examples) - num_actual_eval_examples)
+        logger.info("  Batch size = %d", FLAGS.eval_batch_size)
+
+        # This tells the estimator to run through the entire set.
+        eval_steps = None
+        # However, if running eval on the TPU, you will need to specify the number of steps.
+        if FLAGS.use_tpu:
+            assert len(eval_examples) % FLAGS.eval_batch_size == 0
+            eval_steps = int(len(eval_examples) // FLAGS.eval_batch_size)
+
+        eval_drop_remainder = True if FLAGS.use_tpu else False
+        eval_input_fn = file_based_input_fn_builder(
+            input_file=eval_file,
+            seq_length=FLAGS.max_seq_length,
+            is_training=False,
+            drop_remainder=eval_drop_remainder
+        )
+
+        result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
+
+        output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
+        with tf.gfile.GFile(output_eval_file, "w") as writer:
+            logger.info("***** Eval results *****")
+            for key in sorted(result.keys()):
+                logger.info("  %s = %s", key, str(result[key]))
+                writer.write("%s = %s\n" % (key, str(result[key])))
+
     if FLAGS.do_predict:
-        predict_examples = processor.get_test_examples(TOUT)
+        predict_examples = processor.get_test_examples(FLAGS.data_dir)
         num_actual_predict_examples = len(predict_examples)
         if FLAGS.use_tpu:
             # TPU requires a fixed batch size for all batches, therefore the number of examples must be a multiple
@@ -894,7 +933,7 @@ def main(_):
             while len(predict_examples) % FLAGS.predict_batch_size != 0:
                 predict_examples.append(PaddingInputExample())
 
-        predict_file = os.path.join(TOUT, "test", "predict.tf_record")
+        predict_file = os.path.join(FLAGS.output_dir, "predict.tf_record")
         file_based_convert_examples_to_features(predict_examples, slot_label_list, intent_label_list,
                                                 FLAGS.max_seq_length, tokenizer, predict_file)
 
@@ -911,11 +950,10 @@ def main(_):
             is_training=False,
             drop_remainder=predict_drop_remainder)
 
-        # 在此处指定加载训练好的模型
         result = estimator.predict(input_fn=predict_input_fn)
 
-        intent_output_predict_file = os.path.join(TOUT, "test", "intent_prediction_test_results.txt")
-        slot_output_predict_file = os.path.join(TOUT, "test", "slot_filling_test_results.txt")
+        intent_output_predict_file = os.path.join(FLAGS.output_dir, "intent_prediction_test_results.txt")
+        slot_output_predict_file = os.path.join(FLAGS.output_dir, "slot_filling_test_results.txt")
 
         # 解析预测结果
         with tf.gfile.GFile(intent_output_predict_file, "w") as intent_writer:
@@ -938,6 +976,113 @@ def main(_):
                     num_written_lines += 1
                 assert num_written_lines == num_actual_predict_examples
 
+        if FLAGS.calculate_model_score:
+            path_to_label_file = os.path.join(FLAGS.data_dir, "test")
+            path_to_predict_label_file = FLAGS.output_dir
+            log_out_file = path_to_predict_label_file
+            if FLAGS.task_name.lower() == "quantity":  # 计算评价指标
+                intent_slot_reports = tf_metrics.Quantity_Slot_Filling_and_Intent_Detection_Calculate(
+                    path_to_label_file, path_to_predict_label_file, log_out_file)
+            else:
+                raise ValueError("Not this calculate_model_score")
+            result_intent = intent_slot_reports.show_intent_prediction_report(store_report=True)
+            result_slot = intent_slot_reports.show_slot_filling_report(store_report=True)
+            with open("./log.log", "a", encoding="utf-8") as f:
+                f.write("=" * 30 + "\n")
+                f.write(FLAGS.saved_checkpoint + "\n")
+                for k, v in result_intent.items():
+                    f.write(str(k) + "\t" + str(v) + "\n")
+                f.write("=" * 30 + "\n")
+
 
 if __name__ == "__main__":
     tf.compat.v1.app.run()
+
+
+"""
+2021-07-04 01:58:23
+INFO:tensorflow:***** Eval results *****
+INFO:tensorflow:  eval_intent_accuracy = 0.8545455
+INFO:tensorflow:  eval_intent_loss = 0.5996723
+INFO:tensorflow:  eval_slot_f(macro) = 0.7628071
+INFO:tensorflow:  eval_slot_f(micro) = 0.99333096
+INFO:tensorflow:  eval_slot_loss = 2.0719206
+INFO:tensorflow:  eval_slot_precision(macro) = 0.80826795
+INFO:tensorflow:  eval_slot_precision(micro) = 0.9935447
+INFO:tensorflow:  eval_slot_recall(macro) = 0.73739433
+INFO:tensorflow:  eval_slot_recall(micro) = 0.9931173
+INFO:tensorflow:  global_step = 689
+INFO:tensorflow:  loss = 2.1158006
+"""
+
+"""
+---show_intent_prediction_report---
+2021-07-04 02:10:16
+准确率: 0.20938628158844766
+宏平均精确率: 0.07711442786069651
+微平均精确率: 0.20938628158844766
+加权平均精确率: 0.08320760816854356
+宏平均召回率: 0.16498520312079634
+微平均召回率: 0.20938628158844766
+加权平均召回率: 0.20938628158844766
+/home/klhao/.conda/envs/klhao-tensorflow1/lib/python3.6/site-packages/sklearn/metrics/_classification.py:1465: UndefinedMetricWarning: F-score is ill-defined and being set to 0.0 in labels with no true nor predicted samples. Use `zero_division` parameter to control this behavior.
+  average, "true nor predicted", 'F-score is', len(true_sum)
+宏平均F1-score: 0.05601458772579634
+微平均F1-score: 0.20938628158844766
+加权平均F1-score: 0.08084799384827177
+
+
+------------------------------------------------------------
+---show_slot_filling_report---
+2021-07-04 02:10:16
+准确率: 0.002181691247054717
+宏平均精确率: 0.0025871310070408097
+微平均精确率: 0.002181691247054717
+加权平均精确率: 0.0006620915527031852
+/home/klhao/.conda/envs/klhao-tensorflow1/lib/python3.6/site-packages/sklearn/metrics/_classification.py:1221: UndefinedMetricWarning: Recall is ill-defined and being set to 0.0 in labels with no true samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, msg_start, len(result))
+宏平均召回率: 0.035830052654219145
+微平均召回率: 0.002181691247054717
+加权平均召回率: 0.002181691247054717
+宏平均F1-score: 0.004831093499376966
+微平均F1-score: 0.005387350501023597
+加权平均F1-score: 0.01751689691147007
+
+"""
+
+"""
+最终采用689模型，暂时解决问题
+---show_intent_prediction_report---
+2021-07-04 03:37:53
+准确率: 0.8592057761732852
+宏平均精确率: 0.8384156423409471
+微平均精确率: 0.8592057761732852
+加权平均精确率: 0.8594680741966007
+宏平均召回率: 0.8182231732353297
+微平均召回率: 0.8592057761732852
+加权平均召回率: 0.8592057761732852
+/home/klhao/.conda/envs/klhao-tensorflow1/lib/python3.6/site-packages/sklearn/metrics/_classification.py:1465: UndefinedMetricWarning: F-score is ill-defined and being set to 0.0 in labels with no true nor predicted samples. Use `zero_division` parameter to control this behavior.
+  average, "true nor predicted", 'F-score is', len(true_sum)
+宏平均F1-score: 0.7083456671708459
+微平均F1-score: 0.8592057761732852
+加权平均F1-score: 0.8585093788286966
+
+
+------------------------------------------------------------
+---show_slot_filling_report---
+2021-07-04 03:37:53
+准确率: 0.8504983388704319
+宏平均精确率: 0.776906844956044
+微平均精确率: 0.8504983388704319
+加权平均精确率: 0.8922870306760866
+/home/klhao/.conda/envs/klhao-tensorflow1/lib/python3.6/site-packages/sklearn/metrics/_classification.py:1221: UndefinedMetricWarning: Recall is ill-defined and being set to 0.0 in labels with no true samples. Use `zero_division` parameter to control this behavior.
+  _warn_prf(average, modifier, msg_start, len(result))
+宏平均召回率: 0.7239335076235502
+微平均召回率: 0.8504983388704319
+加权平均召回率: 0.8504983388704319
+宏平均F1-score: 0.7996160286720917
+微平均F1-score: 0.9102222222222222
+加权平均F1-score: 0.9082880824212634
+
+"""
+
