@@ -235,26 +235,46 @@ class Sequence_Labeling_and_Text_Classification_Calculate(object):
     @classmethod
     def show_metrics(cls, y_test_list, y_predict_list, label_list):
         print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-        print('准确率:', metrics.accuracy_score(y_test_list, y_predict_list))  # 预测准确率输出
+        accuracy = metrics.accuracy_score(y_test_list, y_predict_list)
+        print('准确率:', accuracy)
 
-        print('宏平均精确率:', metrics.precision_score(y_test_list, y_predict_list, average='macro'))  # 预测宏平均精确率输出
-        print('微平均精确率:', metrics.precision_score(y_test_list, y_predict_list, average='micro'))  # 预测微平均精确率输出
-        print('加权平均精确率:', metrics.precision_score(y_test_list, y_predict_list, average='weighted'))  # 预测加权平均精确率输出
+        macro_accuracy = metrics.precision_score(y_test_list, y_predict_list, average='macro')
+        print('宏平均精确率:', macro_accuracy)
+        micro_accuracy = metrics.precision_score(y_test_list, y_predict_list, average='micro')
+        print('微平均精确率:', micro_accuracy)
+        weighted_accuracy = metrics.precision_score(y_test_list, y_predict_list, average='weighted')
+        print('加权平均精确率:', weighted_accuracy)
 
-        print('宏平均召回率:', metrics.recall_score(y_test_list, y_predict_list, average='macro'))  # 预测宏平均召回率输出
-        print('微平均召回率:', metrics.recall_score(y_test_list, y_predict_list, average='micro'))  # 预测微平均召回率输出
-        print('加权平均召回率:', metrics.recall_score(y_test_list, y_predict_list, average='micro'))  # 预测加权平均召回率输出
+        macro_recall = metrics.recall_score(y_test_list, y_predict_list, average='macro')
+        print('宏平均召回率:', macro_recall)
+        micro_recall = metrics.recall_score(y_test_list, y_predict_list, average='micro')
+        print('微平均召回率:', micro_recall)
+        weighted_recall = metrics.recall_score(y_test_list, y_predict_list, average='micro')
+        print('加权平均召回率:', weighted_recall)
 
-        print('宏平均F1-score:',
-              metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='macro'))  # 预测宏平均f1-score输出
-        print('微平均F1-score:',
-              metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='micro'))  # 预测微平均f1-score输出
-        print('加权平均F1-score:',
-              metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='weighted'))  # 预测加权平均f1-score输出
+        macro_f1 = metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='macro')
+        print('宏平均F1-score:', macro_f1)
+        micro_f1 = metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='micro')
+        print('微平均F1-score:', micro_f1)
+        weighted_f1 = metrics.f1_score(y_test_list, y_predict_list, labels=label_list, average='weighted')
+        print('加权平均F1-score:', weighted_f1)
 
-        #print('混淆矩阵输出:\n', metrics.confusion_matrix(y_test_list, y_predict_list))  # 混淆矩阵输出
-        #print('分类报告:\n', metrics.classification_report(y_test_list, y_predict_list))  # 分类报告输出
+        # print('混淆矩阵输出:\n', metrics.confusion_matrix(y_test_list, y_predict_list))
+        # print('分类报告:\n', metrics.classification_report(y_test_list, y_predict_list))
         print("\n")
+
+        return {
+            "accuracy": accuracy,
+            "macro_accuracy": macro_accuracy,
+            "micro_accuracy": micro_accuracy,
+            "weighted_accuracy": weighted_accuracy,
+            "macro_recall": macro_recall,
+            "micro_recall": micro_recall,
+            "weighted_recall": weighted_recall,
+            "macro_f1": macro_f1,
+            "micro_f1": micro_f1,
+            "weighted_f1": weighted_f1
+        }
 
     @classmethod
     def store_model_score(cls, y_test_list=None, y_predict_list=None, label_list=None,
@@ -444,10 +464,11 @@ class Snips_Slot_Filling_and_Intent_Detection_Calculate(Sequence_Labeling_and_Te
         predict_intent_label_list = self.get_predict_intent_label_list(path_to_predict_intent_label_file)
         labels = self.get_intent_labels()
         print("---show_intent_prediction_report---")
-        self.show_metrics(intent_label_list, predict_intent_label_list, labels)
+        result = self.show_metrics(intent_label_list, predict_intent_label_list, labels)
         print("--" * 30)
         if store_report:
             self.store_model_score(intent_label_list, predict_intent_label_list, labels, self.log_out_file)
+        return result
 
     def show_slot_filling_report(self, store_report=True, label_choose=None):
         slot_test_list, clean_predict_slot_list = self.producte_slot_list()
@@ -460,10 +481,11 @@ class Snips_Slot_Filling_and_Intent_Detection_Calculate(Sequence_Labeling_and_Te
         else:
             raise ValueError("Not found this task labels")
         print("---show_slot_filling_report---")
-        self.show_metrics(slot_test_list, clean_predict_slot_list, labels)
+        result = self.show_metrics(slot_test_list, clean_predict_slot_list, labels)
         print("--" * 30)
         if store_report:
             self.store_model_score(slot_test_list, clean_predict_slot_list, labels, self.log_out_file)
+        return result
 
 
 # to be modified

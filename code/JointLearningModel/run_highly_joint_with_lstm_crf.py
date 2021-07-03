@@ -58,9 +58,9 @@ flags.DEFINE_string("init_checkpoint", os.path.join(BERT_MODEL_DIR, 'bert_model.
 flags.DEFINE_string("output_dir", OUTPUT_DIR, "The output directory where the model checkpoints will be written.")
 
 flags.DEFINE_bool("do_lower_case", False, "Whether to lower case the input text.")
-flags.DEFINE_bool("do_train", True, "Whether to run training.")
-flags.DEFINE_bool("do_eval", True, "Whether to run eval on the dev set.")
-flags.DEFINE_bool("do_predict", True, "Whether to run the model in inference mode on the test set.")
+flags.DEFINE_bool("do_train", False, "Whether to run training.")
+flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
+flags.DEFINE_bool("do_predict", False, "Whether to run the model in inference mode on the test set.")
 flags.DEFINE_bool("calculate_model_score", True, "Calculate model score on test data")
 
 flags.DEFINE_integer("max_seq_length", 80, "The maximum total input sequence length after WordPiece tokenizing.")
@@ -77,6 +77,10 @@ flags.DEFINE_float("warmup_proportion", 0.1,
                    "Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10% of training.")
 flags.DEFINE_integer("save_checkpoints_steps", 60, "How often to save the model checkpoint.")  # 60 * 32 = 1920个样本
 flags.DEFINE_integer("iterations_per_loop", 1000, "How many steps to make in each estimator call.")
+
+# 用于预测API ===========================================================================
+flags.DEFINE_string("saved_checkpoint", "../../saved_model/689/", "Saved checkpoint for slot prediction.")
+# ======================================================================================
 
 # not used
 flags.DEFINE_string("master", None, "[Optional] TensorFlow master URL.")
@@ -799,10 +803,10 @@ def main(_):
         tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
             FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project
         )
+
     run_config = tf.contrib.tpu.RunConfig(
         cluster=tpu_cluster_resolver,
         master=FLAGS.master,
-        # model_dir=FLAGS.output_dir,
         save_checkpoints_steps=FLAGS.save_checkpoints_steps,
         tpu_config=tf.contrib.tpu.TPUConfig(
             iterations_per_loop=FLAGS.iterations_per_loop,
@@ -836,7 +840,7 @@ def main(_):
     estimator = tf.contrib.tpu.TPUEstimator(
         use_tpu=FLAGS.use_tpu,
         model_fn=model_fn,
-        model_dir=FLAGS.output_dir,
+        model_dir=FLAGS.saved_checkpoint,
         config=run_config,
         train_batch_size=FLAGS.train_batch_size,
         eval_batch_size=FLAGS.eval_batch_size,
